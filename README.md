@@ -22,12 +22,6 @@ Mining bot untuk **SRTsirius (Sirius Network)** — akun auto-generate tanpa ema
   cron */5 menit → watchdog.sh (restart kalau mati ATAU hang)
 ```
 
-## Kenapa repo ini ada
-
-Dua akun pertama mati permanen. Bukan karena expired — karena **refresh token sekali-pakai**. Sekali kepakai, token lama terbakar (`AUTH_REFRESH_REUSED`) dan akun hilang selamanya.
-
-Repo ini adalah jawaban atas pertanyaan: *bisa gak akun ini biar gak hangus?*
-
 ## Tiga lapis pengaman
 
 | # | Lapis | Cara kerja |
