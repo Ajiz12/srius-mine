@@ -1,0 +1,18 @@
+# Kredensial & state — JANGAN PERNAH KE-PUSH
+.env
+account.json
+account.backup.json
+account.json.tmp
+.token.lock
+token.txt
+*.pem
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS
+.DS_Store
