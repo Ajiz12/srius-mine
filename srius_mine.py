@@ -604,7 +604,7 @@ def ensure_token(acc):
     if exp is None:
         # belum pernah refresh — coba sekali buat dapat expiry
         return refresh(acc) or acc
-    if now >= exp - 120:  # refresh 2 menit sebelum expired
+    if now >= exp - 300:  # refresh 5 menit sebelum expired
         log(f"[token] access expired dalam {exp - now:.0f}s — refresh proaktif")
         new = refresh(acc)
         if new:
@@ -714,8 +714,9 @@ def main():
         return
 
     d = r["body"].get("data", {})
+    bal = get_balance(acc)
     log(f"[status] {d.get('miningStatus')} rate={d.get('ratePerMinute')}/m "
-        f"total={d.get('totalMiningReward')}")
+        f"mining={d.get('totalMiningReward')} saldo={bal}")
     if d.get("miningStatus") != "RUNNING":
         log("[!] mining tidak jalan — start")
         if not bind_inviter(acc):
@@ -723,7 +724,6 @@ def main():
         start_mining(acc)
 
     # notif start — isi perolehan task + mining
-    bal = get_balance(acc)
     tg(fmt_daily(acc["userCode"], d.get("miningStatus"), d.get("ratePerMinute"),
                  total_sst=bal, task_sst=None, mining_sst=d.get("totalMiningReward")))
 
@@ -789,10 +789,10 @@ def main():
                     continue
                 err_streak = 0
                 d = r["body"].get("data", {})
-                log(f"[status] {d.get('miningStatus')} rate={d.get('ratePerMinute')} "
-                    f"total={d.get('totalMiningReward')}")
                 # cek saldo nambah tiap 24 jam — deteksi mining macet
                 bal = get_balance(acc)
+                log(f"[status] {d.get('miningStatus')} rate={d.get('ratePerMinute')}/m "
+                    f"mining={d.get('totalMiningReward')} saldo={bal}")
                 if bal is not None:
                     alert = check_balance_growth(bal)
                     if alert:
