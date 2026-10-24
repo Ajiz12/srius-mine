@@ -1,9 +1,9 @@
-# SRTsirius Mining Bot — Dokumentasi Lengkap
+# Srius Mine — Dokumentasi Lengkap
 
 Bot mining otomatis untuk **SRTsirius (Sirius Network)**. Akun auto-generate tanpa email/password, mining via direct JWE API, Turnstile auto-solve, token refresh otomatis, notif Telegram.
 
-**Lokasi:** `<bots-dir>/srt-bot/`
-**Status:** RUNNING via PM2 (`srt-bot`) + cron watchdog
+**Lokasi:** `<repo-dir>/`
+**Status:** RUNNING via PM2 (`srius-mine`) + cron watchdog
 
 ---
 
@@ -11,7 +11,7 @@ Bot mining otomatis untuk **SRTsirius (Sirius Network)**. Akun auto-generate tan
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  PM2: srt-bot  (run.sh → srt_bot.py)                         │
+│  PM2: srius-mine  (run.sh → srius_mine.py)                         │
 │                                                              │
 │  ┌────────────┐   ┌──────────────┐   ┌──────────────────┐   │
 │  │ Turnstile  │──▶│   Register   │──▶│  account.json    │   │
@@ -38,7 +38,7 @@ Bot mining otomatis untuk **SRTsirius (Sirius Network)**. Akun auto-generate tan
 
 | File | Fungsi |
 |---|---|
-| `srt_bot.py` | Bot utama (627 baris) |
+| `srius_mine.py` | Bot utama (627 baris) |
 | `account.json` | Akun aktif: userCode, token, expiry absolut |
 | `account.backup.json` | Backup token otomatis (penyelamat kalau token terbakar) |
 | `srt_pub.pem` | Public key server buat enkripsi JWE |
@@ -278,14 +278,14 @@ Bot cek status tiap 5 menit. Kalau `miningStatus != RUNNING`, bot bind inviter l
 ### PM2
 
 ```bash
-pm2 start ./run.sh --name srt-bot --time
+pm2 start ./run.sh --name srius-mine --time
 pm2 save
 ```
 
 ### Watchdog (cron tiap 5 menit)
 
 ```bash
-*/5 * * * * <bots-dir>/srt-bot/watchdog.sh
+*/5 * * * * <repo-dir>/watchdog.sh
 ```
 
 Cek 2 kondisi:
@@ -306,27 +306,27 @@ pm2 save
 ### Cek status
 
 ```bash
-cd <bots-dir>/srt-bot && ./status.sh
+cd <repo-dir> && ./status.sh
 ```
 
 ### Lihat log
 
 ```bash
-tail -f <bots-dir>/srt-bot/bot.log
+tail -f <repo-dir>/bot.log
 ```
 
 ### Restart
 
 ```bash
-pm2 restart srt-bot
+pm2 restart srius-mine
 ```
 
 ### Register akun baru (kalau token mati permanen)
 
 ```bash
 cd <turnstile-dir> && python3 solve6.py
-cp account.json <bots-dir>/srt-bot/account.json
-pm2 restart srt-bot
+cp account.json <repo-dir>/account.json
+pm2 restart srius-mine
 ```
 
 Bot akan otomatis: bind inviter → klaim 5 task → start mining.

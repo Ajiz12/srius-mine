@@ -1,4 +1,4 @@
-# SRTsirius — API Reference & Akun
+# Srius Mine — API Reference & Akun
 
 **Base URL:** `https://api.siriussrt.com`
 
