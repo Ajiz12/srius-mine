@@ -735,6 +735,11 @@ def main():
             now = time.time()
             now_wib = datetime.now(WIB)
 
+            # refresh proaktif TIAP iterasi (30s) — jangan cuma tiap 5 menit.
+            # Kalau cuma dicek di blok 5-menit, token bisa expired di sela-sela
+            # iterasi (misal loop tertahan request lama) dan log nunjukin angka negatif.
+            acc = ensure_token(acc)
+
             # ringkasan harian (sekali per hari, jam DAILY_HOUR WIB)
             today = now_wib.strftime("%Y-%m-%d")
             if (last_daily != today and now_wib.hour >= DAILY_HOUR
@@ -758,8 +763,7 @@ def main():
             # cek status tiap 5 menit
             if now - last_check >= 300:
                 last_check = now
-                # refresh proaktif SEBELUM token expired — biar gak pernah 401
-                acc = ensure_token(acc)
+                # token sudah di-refresh di atas loop — langsung cek status
                 s, r = status(acc)
                 if s in (401, 403):
                     log("[!] token expired — refresh")
