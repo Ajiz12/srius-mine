@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Restart srius-mine kalau mati ATAU hang (log tidak update > 15 menit)
-cd "$(dirname "$0")"
+# CATATAN: cron tidak punya PATH yang sama dengan shell interaktif —
+# pm2 ada di ~/.nvm/versions/node/*/bin, harus di-set eksplisit.
+export PATH="$HOME/.nvm/versions/node/$(ls $HOME/.nvm/versions/node 2>/dev/null | sort -V | tail -1)/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+
+cd "$(dirname "$0")" || exit 1
 LOG=bot.log
 STALE_MIN=15
 
