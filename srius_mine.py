@@ -43,7 +43,7 @@ TOKEN_FILE = os.path.join(STATE_DIR, "token.txt")
 TG_TOKEN = os.environ.get("SRT_TG_TOKEN", "")
 TG_CHAT = os.environ.get("SRT_TG_CHAT", "<your-telegram-chat-id>")
 INVITER_CODE = os.environ.get("SRT_INVITER", "<your-inviter-code>")
-TG_MAX_PER_DAY = int(os.environ.get("SRT_TG_MAX_PER_DAY", "3"))
+TG_MAX_PER_DAY = int(os.environ.get("SRT_TG_MAX_PER_DAY", "1"))
 DAILY_HOUR = int(os.environ.get("SRT_TG_DAILY_HOUR", "7"))  # ringkasan harian jam 07:00 WIB
 
 WIB = timezone(timedelta(hours=7))
@@ -113,8 +113,9 @@ def fmt_backup(acc):
             f"Waktu: {datetime.now(WIB).strftime('%d %b %Y %H:%M')} WIB")
 
 
-def fmt_report(user_code, mining_status, rate_per_min, total_sst=None, acc=None):
-    """Template notif SRTsirius."""
+def fmt_daily(user_code, mining_status, rate_per_min, total_sst=None,
+              task_sst=None, mining_sst=None, acc=None):
+    """Notif harian — sekali sehari, isi perolehan task + mining."""
     if total_sst is None and acc is not None:
         total_sst = get_balance(acc)
     try:
@@ -125,12 +126,86 @@ def fmt_report(user_code, mining_status, rate_per_min, total_sst=None, acc=None)
         total = float(total_sst)
     except (TypeError, ValueError):
         total = 0.0
+    try:
+        task = float(task_sst)
+    except (TypeError, ValueError):
+        task = 0.0
+    try:
+        mine = float(mining_sst)
+    except (TypeError, ValueError):
+        mine = 0.0
     return (f"SRTsirius mining ✅\n\n"
             f"🤖 User: {user_code}\n"
             f"✅ Status: {mining_status}\n"
             f"📊 Rate: {rate_h:.4f} $SST/h\n"
+            f"🎯 Task: {task:.4f} $STT\n"
+            f"⛏️ Mining: {mine:.4f} $STT\n"
             f"📈 My $STT: {total:.4f}\n\n"
             f"Waktu: {datetime.now(WIB).strftime('%d %b %Y %H:%M')} WIB")
+
+
+# ── monitor saldo 24 jam ──────────────────────────────────────────────────
+# Saldo harus nambah tiap 24 jam. Kalau diam 24 jam penuh, mining macet.
+BAL_STATE_FILE = os.path.join(STATE_DIR, "balance_state.json")
+
+
+def load_balance_state():
+    try:
+        with open(BAL_STATE_FILE) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_balance_state(st):
+    tmp = BAL_STATE_FILE + ".tmp"
+    try:
+        with open(tmp, "w") as f:
+            json.dump(st, f, indent=1)
+        os.replace(tmp, BAL_STATE_FILE)
+    except OSError as e:
+        log(f"[saldo] gagal simpan state: {e}")
+
+
+def check_balance_growth(bal):
+    """Catat saldo + cek apakah nambah dalam 24 jam.
+    Return pesan alert kalau macet, None kalau normal."""
+    if bal is None:
+        return None
+    now = time.time()
+    st = load_balance_state()
+    st["last_balance"] = bal
+    st["last_ts"] = now
+    # window belum pernah dimulai — mulai sekarang, jangan cek dulu
+    if not st.get("window_start"):
+        st["window_start"] = now
+        st["window_min"] = bal
+        save_balance_state(st)
+        return None
+    # catat saldo terkecil dalam window biar deteksi "diam total"
+    if st.get("window_min") is None or bal < st["window_min"]:
+        st["window_min"] = bal
+    save_balance_state(st)
+
+    # baru cek macet kalau window sudah >= 24 jam
+    if now - st["window_start"] < 86400:
+        return None
+    growth = bal - st["window_min"]
+    if growth < 0.4:  # minimal ~1 cycle settlement (0.4166)
+        log(f"[saldo] MACET — tumbuh {growth:.4f} dalam 24 jam (min {st['window_min']:.4f} -> {bal:.4f})")
+        return (f"⚠️ SRTsirius MINING MACET\n\n"
+                f"🤖 User: {st.get('userCode', '?')}\n"
+                f"📈 Saldo 24 jam lalu: {st['window_min']:.4f} $STT\n"
+                f"📈 Saldo sekarang: {bal:.4f} $STT\n"
+                f"📊 Tumbuh: {growth:.4f} $STT (harusnya ~0.4166/jam)\n\n"
+                f"Mining tidak menghasilkan reward. Perlu dicek manual.\n\n"
+                f"Waktu: {datetime.now(WIB).strftime('%d %b %Y %H:%M')} WIB")
+    log(f"[saldo] tumbuh {growth:.4f} $STT dalam 24 jam — normal")
+    # reset window buat periode berikutnya
+    st["window_start"] = now
+    st["window_min"] = bal
+    save_balance_state(st)
+    return None
 
 
 HB = b64u(json.dumps(HEADER, separators=(",", ":")).encode())
@@ -635,7 +710,7 @@ def main():
         s, r = status(acc)
     if s != 200:
         log(f"[!] status tetap gagal {s} — {json.dumps(r)[:200]}")
-        tg(fmt_report(acc["userCode"], f"API_ERROR_{s}", "0", "0"))
+        tg(fmt_daily(acc["userCode"], f"API_ERROR_{s}", "0", total_sst="0"))
         return
 
     d = r["body"].get("data", {})
@@ -647,8 +722,10 @@ def main():
             log("[!] inviter bind gagal")
         start_mining(acc)
 
-    tg(fmt_report(acc["userCode"], d.get("miningStatus"), d.get("ratePerMinute"),
-                  acc=acc))
+    # notif start — isi perolehan task + mining
+    bal = get_balance(acc)
+    tg(fmt_daily(acc["userCode"], d.get("miningStatus"), d.get("ratePerMinute"),
+                 total_sst=bal, task_sst=None, mining_sst=d.get("totalMiningReward")))
 
     last_check = time.time()
     last_daily = None
@@ -669,8 +746,12 @@ def main():
                 st = r1["body"].get("data", {}) if s1 == 200 else {}
                 ov = r3["body"].get("data", {}) if s3 == 200 else {}
                 bal = ov.get("points", {}).get("totalBalance")
-                tg(fmt_report(acc["userCode"], st.get("miningStatus"),
-                              st.get("ratePerMinute"), total_sst=bal))
+                task_pts = (r2["body"].get("data", {}).get("totalPointsEarned")
+                            if s2 == 200 else None)
+                mine_pts = st.get("totalMiningReward")
+                tg(fmt_daily(acc["userCode"], st.get("miningStatus"),
+                             st.get("ratePerMinute"), total_sst=bal,
+                             task_sst=task_pts, mining_sst=mine_pts))
                 # backup kredensial ke Telegram — force, jangan kena rate limit
                 tg(fmt_backup(acc), force=True)
 
@@ -692,8 +773,13 @@ def main():
                 if s != 200:
                     err_streak += 1
                     log(f"[!] status {s} (streak {err_streak}) — {json.dumps(r)[:200]}")
+                    # notif error cuma 1x sehari — biar gak spam
                     if err_streak >= 3:
-                        tg(fmt_report(acc["userCode"], f"API_ERROR_{s}", "0", "0"))
+                        today = datetime.now(WIB).date().isoformat()
+                        if last_daily != today:
+                            last_daily = today
+                            tg(fmt_daily(acc["userCode"], f"API_ERROR_{s}", "0",
+                                         total_sst="0"))
                     if err_streak >= 6:
                         log("[!] streak 6 — refresh token paksa")
                         acc = refresh(acc) or acc
@@ -705,17 +791,25 @@ def main():
                 d = r["body"].get("data", {})
                 log(f"[status] {d.get('miningStatus')} rate={d.get('ratePerMinute')} "
                     f"total={d.get('totalMiningReward')}")
+                # cek saldo nambah tiap 24 jam — deteksi mining macet
+                bal = get_balance(acc)
+                if bal is not None:
+                    alert = check_balance_growth(bal)
+                    if alert:
+                        tg(alert, force=True)
                 if d.get("miningStatus") != "RUNNING":
                     log("[!] mining berhenti — restart")
                     if not bind_inviter(acc):
                         log("[!] inviter bind gagal")
                     res = start_mining(acc)
                     if res:
-                        tg(fmt_report(acc["userCode"], "RUNNING",
-                                      d.get("ratePerMinute"), acc=acc))
+                        bal = get_balance(acc)
+                        tg(fmt_daily(acc["userCode"], "RUNNING",
+                                     d.get("ratePerMinute"), total_sst=bal,
+                                     task_sst=None, mining_sst=None))
                     else:
-                        tg(fmt_report(acc["userCode"], "RESTART_FAILED",
-                                      d.get("ratePerMinute"), acc=acc))
+                        tg(fmt_daily(acc["userCode"], "RESTART_FAILED",
+                                     d.get("ratePerMinute"), total_sst="0"))
 
             time.sleep(30)
         except KeyboardInterrupt:
@@ -723,7 +817,7 @@ def main():
             break
         except Exception as e:
             log(f"[!] error: {e}")
-            tg(fmt_report(acc.get("userCode", "?"), "ERROR", "0", "0"))
+            tg(fmt_daily(acc.get("userCode", "?"), "ERROR", "0", total_sst="0"))
             time.sleep(60)
 
 
